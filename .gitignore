@@ -1,0 +1,19 @@
+# Entornos Virtuales
+venvTesis/
+venv/
+env/
+
+# Variables de Entorno y Secretos (¡NUNCA SUBIR EL .ENV!)
+.env
+
+# Archivos de la base de datos de desarrollo de Django
+db.sqlite3
+
+# Archivos compilados de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
