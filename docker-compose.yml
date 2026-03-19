@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: tesis_db
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tesis_network
+
+  api:
+    build: ./api-ia
+    container_name: tesis_api
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py createsuperuser --noinput || true &&
+             python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./api-ia:/app        # sincroniza tu código en tiempo real
+      - /app/__pycache__     # evita conflictos de caché entre host y contenedor
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - tesis_network
+
+networks:
+  tesis_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
