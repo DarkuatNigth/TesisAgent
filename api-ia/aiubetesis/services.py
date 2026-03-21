@@ -1,13 +1,14 @@
+# api/services.py
 import json
 from google import genai
 from google.genai import types
 from django.conf import settings
-from .models import PromptTemplate
-from .serializers import DiagnosticoIADTO # Tu DTO de Pydantic
+from .models import PromptTemplate, RegistroAnalisisIA
+from .serializers import DiagnosticoIADTO
 
 class GeminiService:
     def __init__(self):
-        # El cliente se inicializa usando la variable de entorno cargada en Docker
+        # El cliente se inicializa usando la variable de entorno cargada en settings
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     def generar_plan_refuerzo(self, estudiante_data, prompt_name="prompt_evaluacion_softcomputing"):
@@ -28,16 +29,41 @@ class GeminiService:
             perfil_docente=estudiante_data['perfil_docente']
         )
 
-        # 3. Llamada a la IA (usando los parámetros de la BD)
-        response = self.client.models.generate_content(
-            model=template.modelo_ia,
-            contents=prompt_final,
-            config=types.GenerateContentConfig(
-                system_instruction=template.system_instruction,
-                ##temperature=template.temperatura,
-                response_mime_type="application/json",
-                response_schema=DiagnosticoIADTO,
-            ),
+        # Preparamos el registro en la base de datos (aún no lo guardamos)
+        registro_bd = RegistroAnalisisIA(
+            prompt_utilizado=template,
+            datos_entrada_json=estudiante_data,
+            exitoso=False # Por defecto Falso, cambiará a True si Gemini responde bien
         )
-        
-        return json.loads(response.text)
+
+        try:
+            # 3. Llamada a la IA
+            response = self.client.models.generate_content(
+                model='gemini-2.5-flash', # Puedes parametrizar esto en el modelo si lo deseas
+                contents=prompt_final,
+                config=types.GenerateContentConfig(
+                    system_instruction=template.system_instruction,
+                    response_mime_type="application/json",
+                    response_schema=DiagnosticoIADTO,
+                    temperature=0.3,
+                    thinking_config=types.ThinkingConfig(
+                        thinking_budget=0  # desactiva el thinking para permitir response_schema
+                    ),
+                ),
+            )
+            
+            # 4. Procesar la respuesta
+            respuesta_json = json.loads(response.text)
+            
+            # 5. ¡GUARDAR EN LA BASE DE DATOS (ÉXITO)!
+            registro_bd.respuesta_ia_json = respuesta_json
+            registro_bd.exitoso = True
+            registro_bd.save()
+            
+            return respuesta_json
+
+        except Exception as e:
+            # ¡GUARDAR EN LA BASE DE DATOS (ERROR)!
+            registro_bd.respuesta_ia_json = {"error": str(e)}
+            registro_bd.save()
+            raise e # Relanzamos el error para que la vista lo maneje y devuelva un código 500

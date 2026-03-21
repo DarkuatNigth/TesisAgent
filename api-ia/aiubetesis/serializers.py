@@ -46,6 +46,8 @@ class TareaEVADTO(BaseModel):
     rubrica_evaluacion: List[CriterioRubricaDTO] = Field(description="Rúbrica de calificación de la tarea")
 
 class DiagnosticoIADTO(BaseModel):
+    materia_detectada: str = Field(description="Nombre inferido de la asignatura (ej: Inteligencia Artificial, Matemáticas)")
+    tema_critico_detectado: str = Field(description="El tema o concepto específico de mayor peso donde el alumno falló (ej: Algoritmos Genéticos)")
     componente_principal: str = Field(description="El problema raíz (ej. Disonancia Pedagógica o Brecha Digital)")
     nivel_riesgo: str = Field(description="bajo | medio | alto | crítico")
     justificacion_pedagogica: List[str] = Field(description="Por qué reprobó, basado en los resultados de aprendizaje no alcanzados")
