@@ -53,15 +53,13 @@ Devuelve ÚNICAMENTE un JSON estructurado. Asegúrate de incluir un campo de "ma
     )
 
 def revertir_prompt_maestro(apps, schema_editor):
-    PromptTemplate = apps.get_model('api', 'PromptTemplate')
+    PromptTemplate = apps.get_model('aiubetesis', 'PromptTemplate')
     PromptTemplate.objects.filter(nombre_identificador='prompt_evaluacion_softcomputing').delete()
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        # IMPORTANTE: Asegúrate de que el nombre del archivo aquí coincida con tu migración inicial
-        # Por lo general es ('api', '0001_initial')
         ('aiubetesis', '0001_initial'), 
     ]
 
