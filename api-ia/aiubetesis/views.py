@@ -1,27 +1,14 @@
 # aiubetesis/views.py
-"""
-Endpoints del sistema de análisis de rendimiento estudiantil.
-
-POST /api/v1/analisis-rendimiento/
-    Lee datos de la BD, aplica el algoritmo de segmentación,
-    llama a Gemini por cada asignatura con bajo rendimiento y
-    persiste los resultados en ia.solucion_generada.
-
-GET  /api/v1/listar-soluciones/
-    Devuelve el listado de soluciones generadas con:
-      - nombre de carrera, asignatura, docente
-      - cantidad de estudiantes en recuperación
-      - acciones disponibles (descargar word / pdf)
-
-POST /api/v1/exportar-doc/
-    Recibe { id: int, tipoDoc: "word" | "pdf" } y devuelve el archivo.
-"""
-
+import json
 import logging
-from django.http import HttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
+from django.conf import settings
+from django.db.models import Max
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from google import genai
+from google.genai import types
 
 from .serializers import (
     AnalisisRendimientoInputSerializer,
@@ -54,7 +41,7 @@ class AnalisisRendimientoView(APIView):
         serializer = AnalisisRendimientoInputSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
-                {"code": 400, "data": serializer.errors, "message": "Parámetros inválidos."},
+                {"code": 400, "data": serializer.errors, "message": "Parametros invalidos."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -62,7 +49,6 @@ class AnalisisRendimientoView(APIView):
         carrera_id     = serializer.validated_data["carrera_id"]
         umbral_nota    = serializer.validated_data["umbral_nota"]
 
-        # 1. Segmentar desde la BD
         try:
             segmentador = SegmentadorRendimiento(
                 carrera_id=carrera_id,
@@ -71,7 +57,7 @@ class AnalisisRendimientoView(APIView):
             )
             grupos = segmentador.segmentar()
         except Exception as e:
-            logger.error("Error en segmentación: %s", e, exc_info=True)
+            logger.error("Error en segmentacion: %s", e, exc_info=True)
             return Response(
                 {"code": 500, "message": f"Error al segmentar datos: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -84,16 +70,15 @@ class AnalisisRendimientoView(APIView):
                     "data": {"soluciones_generadas": 0},
                     "message": (
                         f"No se encontraron estudiantes con bajo rendimiento "
-                        f"(umbral={umbral_nota}) en el período {periodo_codigo}."
+                        f"(umbral={umbral_nota}) en el periodo {periodo_codigo}."
                     ),
                 },
                 status=status.HTTP_200_OK,
             )
 
-        # 2. Llamar a Gemini por cada grupo
-        gemini_service = GeminiService()
+        gemini_service     = GeminiService()
         soluciones_creadas = []
-        errores = []
+        errores            = []
 
         for grupo in grupos:
             try:
@@ -115,9 +100,7 @@ class AnalisisRendimientoView(APIView):
                     "estudiantes_recuperacion": grupo.cantidad_bajo_rendimiento,
                 })
             except Exception as e:
-                logger.error(
-                    "Error Gemini para %s: %s", grupo.asignatura_codigo, e
-                )
+                logger.error("Error Gemini para %s: %s", grupo.asignatura_codigo, e)
                 errores.append({
                     "asignatura": grupo.asignatura_nombre,
                     "error": str(e),
@@ -134,7 +117,7 @@ class AnalisisRendimientoView(APIView):
                 },
                 "message": (
                     f"Se generaron {len(soluciones_creadas)} planes de refuerzo "
-                    f"para el período {periodo_codigo}."
+                    f"para el periodo {periodo_codigo}."
                 ),
             },
             status=status.HTTP_200_OK,
@@ -187,7 +170,7 @@ class ExportarDocView(APIView):
         serializer = ExportarDocSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
-                {"code": 400, "data": serializer.errors, "message": "Parámetros inválidos."},
+                {"code": 400, "data": serializer.errors, "message": "Parametros invalidos."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -198,7 +181,7 @@ class ExportarDocView(APIView):
             solucion = SolucionGenerada.objects.get(id=solucion_id, exitoso=True)
         except SolucionGenerada.DoesNotExist:
             return Response(
-                {"code": 404, "message": f"Solución con id={solucion_id} no encontrada."},
+                {"code": 404, "message": f"Solucion con id={solucion_id} no encontrada."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -209,14 +192,14 @@ class ExportarDocView(APIView):
 
         try:
             if tipo_doc == "word":
-                buffer = export_service.generar_word()
+                buffer       = export_service.generar_word()
                 content_type = (
                     "application/vnd.openxmlformats-officedocument"
                     ".wordprocessingml.document"
                 )
                 nombre_archivo += ".docx"
-            else:  # pdf
-                buffer = export_service.generar_pdf()
+            else:
+                buffer       = export_service.generar_pdf()
                 content_type = "application/pdf"
                 nombre_archivo += ".pdf"
 
@@ -232,3 +215,150 @@ class ExportarDocView(APIView):
                 {"code": 500, "message": f"Error al generar el documento: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+# ---------------------------------------------------------------
+# 4. POST /api/v1/chat-agente/
+# ---------------------------------------------------------------
+ 
+def _clasificar_error_gemini(error: Exception) -> dict:
+    """
+    Detecta el tipo de error de Gemini y retorna un mensaje
+    claro para mostrar al usuario en el front.
+    """
+    mensaje_error = str(error)
+ 
+    if "429" in mensaje_error or "RESOURCE_EXHAUSTED" in mensaje_error:
+        return {
+            "tipo": "cuota_agotada",
+            "mensaje": (
+                "Se ha agotado la cuota disponible de la IA por hoy. "
+                "Esto ocurre porque la API key utilizada es de nivel gratuito "
+                "y tiene un limite diario de solicitudes. "
+                "Por favor intenta nuevamente manana o contacta al administrador "
+                "para actualizar el plan de la API."
+            ),
+        }
+ 
+    if "401" in mensaje_error or "API_KEY_INVALID" in mensaje_error:
+        return {
+            "tipo": "api_key_invalida",
+            "mensaje": (
+                "La clave de acceso a la IA no es valida o ha expirado. "
+                "Contacta al administrador del sistema."
+            ),
+        }
+ 
+    if "503" in mensaje_error or "UNAVAILABLE" in mensaje_error:
+        return {
+            "tipo": "servicio_no_disponible",
+            "mensaje": (
+                "El servicio de IA no esta disponible en este momento. "
+                "Por favor intenta en unos minutos."
+            ),
+        }
+ 
+    if "deadline" in mensaje_error.lower() or "timeout" in mensaje_error.lower():
+        return {
+            "tipo": "timeout",
+            "mensaje": (
+                "La solicitud tardo demasiado en procesarse. "
+                "Por favor intenta con una pregunta mas corta."
+            ),
+        }
+ 
+    return {
+        "tipo": "error_desconocido",
+        "mensaje": "Ocurrio un error inesperado. Por favor intenta nuevamente.",
+    }
+ 
+class ChatAgenteView(APIView):
+    """
+    Recibe el mensaje del usuario, construye un contexto compacto
+    agrupando asignaturas unicas desde la BD y llama a Gemini
+    con streaming. Incluye manejo de errores clasificado.
+    """
+ 
+    def post(self, request, *args, **kwargs):
+        mensaje = request.data.get("mensaje", "").strip()
+        if not mensaje:
+            return Response(
+                {"error": "El campo 'mensaje' es requerido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+ 
+        # 1. Contexto compacto — agrupa por asignatura unica
+        resumen = (
+            SolucionGenerada.objects
+            .filter(exitoso=True)
+            .values(
+                "asignatura_nombre",
+                "asignatura_codigo",
+                "docente_nombre",
+                "carrera_nombre",
+                "periodo_codigo",
+            )
+            .annotate(
+                max_recuperacion=Max("cantidad_estudiantes_recuperacion"),
+                max_total=Max("total_estudiantes"),
+            )
+            .order_by("-max_recuperacion")[:12]
+        )
+ 
+        if not resumen:
+            contexto = "No hay soluciones generadas en el sistema todavia."
+        else:
+            lineas = [
+                f"- {s['asignatura_nombre']} ({s['asignatura_codigo']}): "
+                f"{s['max_recuperacion']} de {s['max_total']} estudiantes en recuperacion, "
+                f"docente: {s['docente_nombre']}, "
+                f"periodo: {s['periodo_codigo']}"
+                for s in resumen
+            ]
+            total_recuperacion = sum(s['max_recuperacion'] for s in resumen)
+            total_estudiantes  = sum(s['max_total'] for s in resumen)
+            contexto = (
+                f"Total general: {total_recuperacion} estudiantes en recuperacion "
+                f"de {total_estudiantes} analizados.\n\n"
+                "Detalle por asignatura:\n" + "\n".join(lineas)
+            )
+ 
+        # 2. Prompt compacto
+        prompt = (
+            "Eres el asistente academico del sistema InnoTech UBE. "
+            "Interpreta los datos de rendimiento estudiantil.\n\n"
+            f"DATOS DEL SISTEMA:\n{contexto}\n\n"
+            f"PREGUNTA: {mensaje}\n\n"
+            "Responde en espanol, conciso y basandote solo en los datos anteriores."
+        )
+ 
+        # 3. Streaming con Gemini + manejo de errores clasificado
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+ 
+        def stream_response():
+            try:
+                for chunk in client.models.generate_content_stream(
+                    model="gemini-2.0-flash",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(temperature=0.2),
+                ):
+                    if chunk.text:
+                        yield f"data: {json.dumps({'text': chunk.text})}\n\n"
+ 
+            except Exception as e:
+                info_error = _clasificar_error_gemini(e)
+                logger.error(
+                    "Error Gemini [%s]: %s",
+                    info_error["tipo"], e
+                )
+                yield f"data: {json.dumps({'error': info_error['mensaje'], 'tipo': info_error['tipo']})}\n\n"
+ 
+            yield "data: [DONE]\n\n"
+ 
+        response = StreamingHttpResponse(
+            stream_response(),
+            content_type="text/event-stream; charset=utf-8",
+        )
+        response["Cache-Control"]     = "no-cache"
+        response["X-Accel-Buffering"] = "no"
+        return response

@@ -41,20 +41,21 @@ export default function Navbar() {
               </Link>
             ))}
           </div>
-
-          {/* Botón agente */}
-          <button
-            onClick={() => setChatOpen(true)}
-            className="flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-1.5
-                       text-sm font-medium text-white transition hover:bg-indigo-700 active:scale-95"
-          >
-            <Bot size={15} />
-            Agente IA
-          </button>
         </div>
       </nav>
 
-      {/* Panel de chat */}
+      {/* Botón flotante agente IA */}
+      <button
+        onClick={() => setChatOpen(true)}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2
+                   rounded-full bg-indigo-600 px-5 py-3 text-sm font-medium
+                   text-white shadow-lg transition hover:bg-indigo-700
+                   active:scale-95"
+      >
+        <Bot size={18} />
+        Agente IA
+      </button>
+
       {chatOpen && <AgentChat onClose={() => setChatOpen(false)} />}
     </>
   );
