@@ -45,6 +45,21 @@ services:
     networks:
       - tesis_network
 
+  front:
+    build:
+      context: ./front-ia
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+        - NEXT_PUBLIC_GEMINI_KEY=${NEXT_PUBLIC_GEMINI_KEY}
+    container_name: tesis_front
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: on-failure
+    networks:
+      - tesis_network
+
 networks:
   tesis_network:
     driver: bridge
