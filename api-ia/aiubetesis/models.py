@@ -7,6 +7,9 @@ class PromptTemplate(models.Model):
     activo = models.BooleanField(default=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        db_table = '"ia"."prompt_template"'
+        
     def __str__(self):
         return self.nombre_identificador
 
@@ -17,6 +20,9 @@ class RegistroAnalisisIA(models.Model):
     respuesta_ia_json = models.JSONField(help_text="JSON estructurado que devolvió Gemini")
     exitoso = models.BooleanField(default=True, help_text="Indica si la IA respondió sin errores")
     fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = '"ia"."registro_analisis_ia"'
 
     def __str__(self):
         return f"Análisis {self.id} - {self.fecha_creacion.strftime('%Y-%m-%d %H:%M')}"

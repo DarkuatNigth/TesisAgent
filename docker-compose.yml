@@ -10,7 +10,10 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./postgres_data:/var/lib/postgresql/data
+      # 1. Almacenamiento persistente de los datos
+      - postgres_data:/var/lib/postgresql/data
+      # 2. AQUÍ ESTÁ LA MAGIA: Montamos el archivo SQL en la carpeta de inicialización
+      - ./innotech_db.sql:/docker-entrypoint-initdb.d/innotech_db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 5s

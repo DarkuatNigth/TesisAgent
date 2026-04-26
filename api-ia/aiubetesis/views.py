@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .serializers import EstudianteDataSerializer
-from .services import GeminiService
+from .Services.services import GeminiService
 
 # ==========================================
 # LOGS
