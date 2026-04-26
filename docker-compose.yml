@@ -27,11 +27,13 @@ services:
       sh -c "
       python manage.py makemigrations &&
       python manage.py migrate &&
+      python manage.py collectstatic --noinput &&
       python manage.py createsuperuser --noinput || true &&
       python manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./api-ia:/app
       - /app/__pycache__
+      - static_volume:/app/staticfiles    # ← agregar
     env_file:
       - .env
     depends_on:
@@ -60,6 +62,7 @@ services:
       - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - static_volume:/app/staticfiles    # ← agregar
     depends_on:
       - api
       - front
@@ -73,3 +76,4 @@ networks:
 
 volumes:
   postgres_data:
+  static_volume:    # ← agregar
