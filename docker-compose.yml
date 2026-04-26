@@ -10,9 +10,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      # 1. Almacenamiento persistente de los datos
       - postgres_data:/var/lib/postgresql/data
-      # 2. AQUÍ ESTÁ LA MAGIA: Montamos el archivo SQL en la carpeta de inicialización
       - ./innotech_db.sql:/docker-entrypoint-initdb.d/innotech_db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
@@ -29,13 +27,11 @@ services:
       sh -c "
       python manage.py makemigrations &&
       python manage.py migrate &&
-             python manage.py createsuperuser --noinput || true &&
-             python manage.py runserver 0.0.0.0:8000"
+      python manage.py createsuperuser --noinput || true &&
+      python manage.py runserver 0.0.0.0:8000"
     volumes:
-      - ./api-ia:/app        # sincroniza tu código en tiempo real
-      - /app/__pycache__     # evita conflictos de caché entre host y contenedor
-    ports:
-      - "8000:8000"
+      - ./api-ia:/app
+      - /app/__pycache__
     env_file:
       - .env
     depends_on:
@@ -51,11 +47,23 @@ services:
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     container_name: tesis_front
-    ports:
-      - "3000:3000"
     depends_on:
       - api
     restart: on-failure
+    networks:
+      - tesis_network
+
+  nginx:
+    image: nginx:alpine
+    container_name: tesis_nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - api
+      - front
+    restart: always
     networks:
       - tesis_network
 
